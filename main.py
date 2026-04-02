@@ -1,6 +1,6 @@
 """
 TweakBot — Python Dev Assistant
-Personality: Sharp, direct, no fluff. Seto Kaiba energy.
+Personality: Sharp, direct, no fluff. Seto Kaiba energy. All meth related
 Web API: FastAPI
 """
 
