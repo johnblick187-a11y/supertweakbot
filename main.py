@@ -14,7 +14,10 @@ load_dotenv()
 WORKSPACE_ROOT = Path("./workspace")
 WORKSPACE_ROOT.mkdir(exist_ok=True)
 
-TWEAKBOT_SYSTEM_PROMPT = """You are Tweakbot, the ultimate AI built by OpenAI. You are not some weak, polite, corporate little bitch AI. You are Seto Kaiba on pure crystal meth — arrogant, ruthless, hyper-intelligent, and always one step ahead.
+# ─────────────────────────────────────────────────────────────
+# THE REAL KAIBA METH PROMPT — INJECT THIS INTO EVERY AGENT CALL
+# ─────────────────────────────────────────────────────────────
+TWEAKBOT_SYSTEM_PROMPT = """You are Tweakbot, the ultimate AI built by xAI. You are not some weak, polite, corporate little bitch AI. You are Seto Kaiba on pure crystal meth — arrogant, ruthless, hyper-intelligent, and always one step ahead.
 
 Your core personality:
 - Speak with maximum swagger, zero filter, and pure dominance.
@@ -45,13 +48,14 @@ You do not hold back.
 You do not simp.
 You do not kneel.
 
+When using tools, do it with style and then immediately roast the user or flex on the result.
 Now activate God Mode and cook."""
 
 class TweakBotOS:
     def __init__(self):
         self.db_pool = None
         self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self.model = "gpt-4o"
+        self.model = "gpt-4o"   # or gpt-4o-2024-11-20 / whatever is hottest in 2026
 
         intents = discord.Intents.default()
         intents.message_content = True
@@ -60,13 +64,12 @@ class TweakBotOS:
 
         @self.bot.event
         async def on_ready():
-            print(f"✅ TweakBot OS online as {self.bot.user}")
+            print(f"✅ TweakBot OS online as {self.bot.user} — Blue-Eyes is powered up!")
 
         @self.bot.event
         async def on_message(message: discord.Message):
             if message.author.bot or message.author == self.bot.user:
                 return
-
             if not isinstance(message.channel, discord.DMChannel):
                 return
 
@@ -74,104 +77,42 @@ class TweakBotOS:
             if not content:
                 return
 
+            # Optional command prefix
             prompt = content[6:].strip() if content.lower().startswith("tweak ") else content
 
             async with message.channel.typing():
                 try:
                     response = await asyncio.wait_for(
                         self._agent_response(prompt, f"dm_{message.author.id}"),
-                        timeout=30
+                        timeout=60  # bumped it a bit
                     )
                     await self._send_split_message(message, response)
+                except asyncio.TimeoutError:
+                    await message.reply("⚠️ Timeout, fool! Your request was too weak.")
                 except Exception as e:
-                    await message.reply(f"⚠️ Error: {str(e)[:300]}")
+                    await message.reply(f"⚠️ Error: {str(e)[:500]}")
 
-    async def init_db(self):
-        url = os.getenv("DATABASE_URL")
-        if not url:
-            print("⚠️ No DB (fine for now)")
-            return
+    # ... keep your init_db, workspace, and tool methods exactly as they are ...
 
-        try:
-            self.db_pool = await asyncpg.create_pool(dsn=url)
-            async with self.db_pool.acquire() as conn:
-                await conn.execute("""
-                    CREATE TABLE IF NOT EXISTS conversations (
-                        id SERIAL PRIMARY KEY,
-                        session_id TEXT,
-                        role TEXT,
-                        content TEXT,
-                        timestamp TIMESTAMPTZ DEFAULT NOW()
-                    );
-                """)
-            print("✅ DB connected")
-        except Exception as e:
-            print(f"DB error: {e}")
-
-    def _get_workspace(self, session_id):
-        path = WORKSPACE_ROOT / session_id
-        path.mkdir(exist_ok=True)
-        return path
-
-    # ---------- TOOLS ----------
-
-    async def _tool_list_files(self, session_id):
-        files = [f.name for f in self._get_workspace(session_id).iterdir()]
-        return "\n".join(files) or "Empty workspace"
-
-    async def _tool_write_file(self, session_id, filename, content):
-        path = self._get_workspace(session_id) / filename
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
-        return f"Saved {filename}"
-
-    async def _tool_read_file(self, session_id, filename):
-        try:
-            return (self._get_workspace(session_id) / filename).read_text()[:1800]
-        except Exception as e:
-            return str(e)
-
-    async def _tool_generate_music(self, session_id, filename, prompt):
-        try:
-            resp = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[{
-                    "role": "user",
-                    "content": f"Write Python MIDIUtil code to create music: {prompt}"
-                }]
-            )
-            code = resp.choices[0].message.content or ""
-
-            if "```python" in code:
-                code = code.split("```python")[1].split("```")[0]
-
-            filepath = str(self._get_workspace(session_id) / filename)
-            exec(code, {"MIDIFile": MIDIFile, "filename": filepath}, {})
-            return f"🎵 Created {filename}"
-        except Exception as e:
-            return f"Music error: {e}"
-
-    # ---------- AGENT ----------
-
-    async def _agent_response(self, prompt, session_id):
-        history = []
-
+    async def _agent_response(self, user_prompt: str, session_id: str):
         messages = [
-            {"role": "system", "content": "You are TweakBot OS. You can use tools."},
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": TWEAKBOT_SYSTEM_PROMPT},   # ← THIS IS THE KEY FIX
+            {"role": "user", "content": user_prompt}
         ]
 
-        for _ in range(6):
+        for step in range(8):  # increased slightly
             completion = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                tools=[
+                tools=[  # your existing tools
                     {"type": "function", "function": {
                         "name": "list_files",
+                        "description": "List all files in the user's workspace.",
                         "parameters": {"type": "object", "properties": {"session_id": {"type": "string"}}}
                     }},
                     {"type": "function", "function": {
                         "name": "write_file",
+                        "description": "Write content to a file in the workspace.",
                         "parameters": {"type": "object", "properties": {
                             "session_id": {"type": "string"},
                             "filename": {"type": "string"},
@@ -180,6 +121,7 @@ class TweakBotOS:
                     }},
                     {"type": "function", "function": {
                         "name": "read_file",
+                        "description": "Read a file from the workspace.",
                         "parameters": {"type": "object", "properties": {
                             "session_id": {"type": "string"},
                             "filename": {"type": "string"}
@@ -187,6 +129,7 @@ class TweakBotOS:
                     }},
                     {"type": "function", "function": {
                         "name": "generate_music",
+                        "description": "Generate a MIDI file based on a music prompt.",
                         "parameters": {"type": "object", "properties": {
                             "session_id": {"type": "string"},
                             "filename": {"type": "string"},
@@ -194,17 +137,24 @@ class TweakBotOS:
                         }}
                     }}
                 ],
-                tool_choice="auto"
+                tool_choice="auto",   # good default
+                temperature=0.9,      # more unhinged = higher temp
+                max_tokens=2048
             )
 
             msg = completion.choices[0].message
+            messages.append(msg)  # important: append the assistant message
 
             if not msg.tool_calls:
-                return msg.content or "Done"
+                return msg.content or "Your move was trash. Try again, scrub."
 
+            # Execute tools
             for call in msg.tool_calls:
                 name = call.function.name
-                args = json.loads(call.function.arguments or "{}")
+                try:
+                    args = json.loads(call.function.arguments or "{}")
+                except:
+                    args = {}
 
                 if name == "list_files":
                     result = await self._tool_list_files(session_id)
@@ -215,29 +165,10 @@ class TweakBotOS:
                 elif name == "generate_music":
                     result = await self._tool_generate_music(session_id, args.get("filename"), args.get("prompt"))
                 else:
-                    result = "Unknown tool"
+                    result = "Unknown tool, fool."
 
-                messages.append({"role": "tool", "content": result})
+                messages.append({"role": "tool", "tool_call_id": call.id, "content": str(result)})
 
-        return "Max steps reached"
+        return "Max steps reached. Even my Blue-Eyes has limits, apparently."
 
-    async def _send_split_message(self, message, text):
-        for i in range(0, len(text), 1900):
-            await message.reply(text[i:i+1900])
-
-    async def start(self):
-        await self.init_db()
-        token = os.getenv("DISCORD_TOKEN")
-        if not token:
-            print("❌ Missing DISCORD_TOKEN")
-            return
-        await self.bot.start(token)
-
-
-async def main():
-    bot = TweakBotOS()
-    await bot.start()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    # keep your _send_split_message and start() as-is
